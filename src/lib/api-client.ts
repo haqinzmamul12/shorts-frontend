@@ -4,6 +4,25 @@ export class ApiError extends Error {
   }
 }
 
+export interface ImageCandidate {
+  url: string;
+  title: string;
+  description: string;
+  category: string;
+  license: string;
+  source_page: string;
+  width: number;
+  height: number;
+}
+
+export interface ImageSelectionInterrupt {
+  type: string;
+  block_index: number;
+  narration_text: string;
+  image_keyword: string;
+  candidates: ImageCandidate[];
+}
+
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 async function requestWithTimeout<T>(
@@ -50,7 +69,7 @@ async function requestWithTimeout<T>(
 export const api = {
   health: () => requestWithTimeout<{ status: string; version: string }>(`${BACKEND_URL}/api/health`),
 
-  fetchTrends: (topic: string, limit: number = 10, language: "english" | "hindi" = "english") =>
+  fetchTrends: (topic: string, limit: number = 10, language: "english" | "hindi" = "english", duration: number = 30) =>
     requestWithTimeout<{
       success: boolean;
       data?: {
@@ -73,10 +92,10 @@ export const api = {
       error?: string;
     }>(`${BACKEND_URL}/api/fetch-trends`, {
       method: "POST",
-      body: JSON.stringify({ topic, limit, language }),
+      body: JSON.stringify({ topic, limit, language, duration }),
     }, 120000),
 
-  animateAssets: (scriptPath: string) =>
+  animateAssets: (scriptPath: string, selectedImages?: Record<string, string>) =>
     requestWithTimeout<{
       success: boolean;
       data?: {
@@ -98,11 +117,28 @@ export const api = {
         narration_blocks: Array<Record<string, unknown>>;
         created_at: string;
         manifest_url: string;
+        status: string;
+        blocks_awaiting_selection?: Array<{
+          block_index: number;
+          narration_text: string;
+          image_keyword: string;
+          queries: string[];
+          candidates: Array<{
+            url: string;
+            title: string;
+            description: string;
+            category: string;
+            license: string;
+            source_page: string;
+            width: number;
+            height: number;
+          }>;
+        }>;
       };
       error?: string;
     }>(`${BACKEND_URL}/api/animate-assets`, {
       method: "POST",
-      body: JSON.stringify({ script_path: scriptPath }),
+      body: JSON.stringify({ script_path: scriptPath, selected_images: selectedImages }),
     }, 300000),
 
   assembleVideo: (manifestPath: string, waitForCompletion: boolean = true) =>
@@ -122,12 +158,20 @@ export const api = {
       body: JSON.stringify({ manifest_path: manifestPath, wait_for_completion: waitForCompletion }),
     }, 300000),
 
-  runPipeline: (topic: string, limit: number = 10, language: "english" | "hindi" = "english") => {
-    const params = new URLSearchParams({ topic, limit: String(limit), language });
+  runPipeline: (topic: string, limit: number = 10, language: "english" | "hindi" = "english", duration: number = 30) => {
+    const params = new URLSearchParams({ topic, limit: String(limit), language, duration: String(duration) });
     return requestWithTimeout<{
       success: boolean;
       data?: {
         status: string;
+        thread_id: string;
+        interrupt?: {
+          type: string;
+          block_index: number;
+          narration_text: string;
+          image_keyword: string;
+          candidates: ImageCandidate[];
+        } | null;
         render_id: string;
         video_url: string;
         run_id: string;
@@ -137,8 +181,78 @@ export const api = {
           animate_assets: { status: string; data?: unknown };
           assemble_video: { status: string; data?: unknown };
         };
+        error?: string;
       };
       error?: string;
     }>(`${BACKEND_URL}/api/run-pipeline?${params.toString()}`, { method: "POST" }, 600000);
   },
+
+  pipelineStatus: (runId: string) =>
+    requestWithTimeout<{
+      success: boolean;
+      data?: {
+        status: string;
+        thread_id: string;
+        current_node: string;
+        completed_nodes: string[];
+        run_id: string;
+        render_id?: string;
+        video_url?: string;
+        error?: string;
+        awaiting_human_image?: {
+          block_index: number;
+          narration_text: string;
+          image_keyword: string;
+          queries: string[];
+        };
+        awaiting_image_selection?: {
+          block_index: number;
+          narration_text: string;
+          image_keyword: string;
+          candidates: Array<{
+            url: string;
+            title: string;
+            description: string;
+            category: string;
+            license: string;
+            source_page: string;
+            width: number;
+            height: number;
+          }>;
+        };
+        interrupt?: {
+          type: string;
+          block_index: number;
+          narration_text: string;
+          image_keyword: string;
+          candidates: ImageCandidate[];
+        } | null;
+      };
+      error?: string;
+    }>(`${BACKEND_URL}/api/pipeline-status/${runId}`, { method: "GET" }, 10000),
+
+  resumePipelineSelection: (runId: string, blockIndex: number, selectedImageUrl: string) =>
+    requestWithTimeout<{
+      success: boolean;
+      data?: {
+        status: string;
+        thread_id: string;
+        run_id: string;
+        render_id: string;
+        video_url: string;
+        interrupt?: {
+          type: string;
+          block_index: number;
+          narration_text: string;
+          image_keyword: string;
+          candidates: ImageCandidate[];
+        } | null;
+        error?: string;
+      };
+      error?: string;
+    }>(`${BACKEND_URL}/api/resume-pipeline-selection/${runId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ block_index: String(blockIndex), selected_image_url: selectedImageUrl }),
+    }, 600000),
 };
