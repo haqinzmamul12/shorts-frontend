@@ -18,6 +18,7 @@ import {
   Play,
   Settings2,
   Sparkles,
+  Upload,
   X,
 } from "lucide-react";
 import { api, type ImageCandidate } from "@/lib/api-client";
@@ -134,6 +135,9 @@ export default function DashboardPage() {
   const [processedBlockIndices, setProcessedBlockIndices] = useState<
     Set<number>
   >(new Set());
+  const [customImagePreview, setCustomImagePreview] = useState<string | null>(null);
+  const [customImageFile, setCustomImageFile] = useState<File | null>(null);
+  const [uploadingCustom, setUploadingCustom] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const imageCount = Math.ceil(duration / 5);
@@ -299,6 +303,10 @@ export default function DashboardPage() {
       animate_assets: "pending",
       assemble_video: "pending",
     });
+
+    // Reset custom image state
+    setCustomImagePreview(null);
+    setCustomImageFile(null);
 
     try {
       // Start the pipeline (now synchronous - waits for completion or HITL pause)
@@ -486,6 +494,72 @@ export default function DashboardPage() {
       console.error("Image selection error:", message, err);
       showToast(message, "error");
     }
+  };
+
+  const uploadCustomImage = async (file: File): Promise<string> => {
+    const threadId = pollingRunId;
+    const blockIndex = currentSelectionBlock?.blockIndex;
+    if (!threadId || blockIndex === undefined) throw new Error("No active pipeline");
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/human-image/${threadId}/${blockIndex}`,
+      { method: "POST", body: formData }
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Upload failed");
+    }
+
+    const data = await response.json();
+    return data.data.image_url;
+  };
+
+  const handleCustomImageSelect = async () => {
+    if (!customImageFile || !customImagePreview) return;
+
+    setUploadingCustom(true);
+    try {
+      const imageUrl = await uploadCustomImage(customImageFile);
+      // Clear custom image state
+      setCustomImagePreview(null);
+      setCustomImageFile(null);
+      // Use the uploaded URL
+      await handleImageSelect(imageUrl);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      showToast(message, "error");
+    } finally {
+      setUploadingCustom(false);
+    }
+  };
+
+  const handleCustomImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      showToast("Please select an image file", "error");
+      return;
+    }
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      showToast("Image must be less than 10MB", "error");
+      return;
+    }
+
+    setCustomImageFile(file);
+    setCustomImagePreview(URL.createObjectURL(file));
+  };
+
+  const removeCustomImage = () => {
+    if (customImagePreview) URL.revokeObjectURL(customImagePreview);
+    setCustomImagePreview(null);
+    setCustomImageFile(null);
   };
 
   const stepCount = Object.values(stepStatuses).filter(
@@ -1009,54 +1083,364 @@ export default function DashboardPage() {
       )}
 
       {showImageSelector && currentSelectionBlock && (
-        <div className="modal-overlay" onClick={() => {}}>
+        <div className="modal-overlay" onClick={() => {}} style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.7)',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+        }}>
           <div
             className="image-selector-modal"
             onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              maxWidth: '95vw',
+              width: '100%',
+              maxHeight: '85vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
           >
-            <div className="modal-header">
-              <h3>
-                Select Image for Scene {currentSelectionBlock.blockIndex + 1}
-              </h3>
-              <p className="modal-narration">
-                {currentSelectionBlock.narrationText}
-              </p>
+            <div className="modal-header" style={{
+              padding: '1rem 1.5rem',
+              borderBottom: '1px solid #e5e7eb',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>
+                  Select Image for Scene {currentSelectionBlock.blockIndex + 1}
+                </h3>
+                <span style={{
+                  fontSize: '0.75rem',
+                  color: '#9ca3af',
+                  background: '#f3f4f6',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '999px',
+                }}>
+                  Scene {currentSelectionBlock.blockIndex + 1} of {Math.ceil(duration / 5)}
+                </span>
+              </div>
+              <div style={{
+                background: '#f0f4f8',
+                border: '1px solid #d1d9e0',
+                borderRadius: '8px',
+                padding: '1rem',
+                marginTop: '0.5rem',
+              }}>
+                <span style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: '#374151',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: '0.375rem',
+                  display: 'block',
+                }}>
+                  Narration for this scene
+                </span>
+                <p style={{
+                  margin: 0,
+                  fontSize: '0.9375rem',
+                  color: '#1f2937',
+                  lineHeight: 1.5,
+                }}>
+                  {currentSelectionBlock.narrationText}
+                </p>
+              </div>
             </div>
-            <div className="candidates-grid">
+            <div className="candidates-grid" style={{
+              display: 'flex',
+              flexDirection: 'row',
+              gap: '0.75rem',
+              padding: '1rem',
+              overflowX: 'auto',
+              flexWrap: 'nowrap',
+            }}>
+              {/* Custom Image Upload Card */}
+              <button
+                type="button"
+                onClick={() => document.getElementById('custom-image-upload')?.click()}
+                disabled={uploadingCustom}
+                style={{
+                  flex: '0 0 180px',
+                  width: '180px',
+                  height: '220px',
+                  background: uploadingCustom ? '#f9fafb' : '#fafbfc',
+                  border: '2px dashed #cbd5e1',
+                  borderRadius: '8px',
+                  cursor: uploadingCustom ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.75rem',
+                  padding: '1rem',
+                  transition: 'border-color 0.2s, background 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  if (!uploadingCustom) {
+                    e.currentTarget.style.borderColor = '#6366f1';
+                    e.currentTarget.style.background = '#f0f4f8';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!uploadingCustom) {
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                    e.currentTarget.style.background = '#fafbfc';
+                  }
+                }}
+              >
+                <input
+                  id="custom-image-upload"
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleCustomImageChange}
+                  disabled={uploadingCustom}
+                />
+                {customImagePreview ? (
+                  <>
+                    <div style={{
+                      position: 'relative',
+                      width: '100%',
+                      height: '140px',
+                      background: '#f3f4f6',
+                      borderRadius: '6px',
+                      overflow: 'hidden',
+                      flexShrink: 0,
+                    }}>
+                      <img
+                        src={customImagePreview}
+                        alt="Custom upload preview"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeCustomImage(); }}
+                        style={{
+                          position: 'absolute',
+                          top: '0.5rem',
+                          right: '0.5rem',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(0,0,0,0.6)',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        aria-label="Remove custom image"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div style={{
+                      width: '100%',
+                      textAlign: 'center',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.375rem',
+                    }}>
+                      <span style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 500,
+                        color: '#1f2937',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}>
+                        {customImageFile?.name || 'Custom image'}
+                      </span>
+                      <span style={{
+                        fontSize: '0.6875rem',
+                        color: '#9ca3af',
+                      }}>
+                        {(customImageFile?.size || 0) < 1024 * 1024
+                          ? `${Math.round((customImageFile?.size || 0) / 1024)} KB`
+                          : `${((customImageFile?.size || 0) / (1024 * 1024)).toFixed(1)} MB`}
+                      </span>
+                      {uploadingCustom ? (
+                        <span style={{
+                          fontSize: '0.6875rem',
+                          color: '#6366f1',
+                        }}>
+                          Uploading...
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleCustomImageSelect(); }}
+                          disabled={!customImageFile || uploadingCustom}
+                          style={{
+                            padding: '0.375rem 1rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: '#fff',
+                            background: '#6366f1',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: customImageFile && !uploadingCustom ? 'pointer' : 'not-allowed',
+                            opacity: customImageFile && !uploadingCustom ? 1 : 0.6,
+                          }}
+                        >
+                          Use This Image
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={32} color="#9ca3af" />
+                    <div style={{ textAlign: 'center', color: '#6b7280' }}>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 500, display: 'block' }}>
+                        Upload Custom Image
+                      </span>
+                      <span style={{ fontSize: '0.75rem' }}>JPG, PNG, WebP • Max 10MB</span>
+                    </div>
+                  </>
+                )}
+              </button>
+              {/* Candidate Cards */}
               {currentSelectionBlock.candidates.map((candidate, idx) => (
                 <button
                   key={idx}
                   className="candidate-card"
                   onClick={() => handleImageSelect(candidate.url)}
                   type="button"
+                  style={{
+                    flex: '0 0 180px',
+                    width: '180px',
+                    height: '220px',
+                    background: '#fff',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.1s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#6366f1';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(99,102,241,0.15)';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.transform = 'none';
+                  }}
                 >
-                  <div className="candidate-image-wrapper">
+                  <div className="candidate-image-wrapper" style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: '140px',
+                    background: '#f3f4f6',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                  }}>
                     <img
                       src={candidate.url}
                       alt={candidate.title}
                       className="candidate-image"
                       loading="lazy"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        transition: 'transform 0.2s',
+                      }}
                     />
-                    <div className="candidate-overlay">
-                      <span className="select-label">Select</span>
+                    <div className="candidate-overlay" style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'rgba(99,102,241,0.85)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: 0,
+                      transition: 'opacity 0.2s',
+                    }}>
+                      <span className="select-label" style={{
+                        color: '#fff',
+                        fontWeight: 600,
+                        fontSize: '0.875rem',
+                        padding: '0.5rem 1rem',
+                        background: 'rgba(0,0,0,0.3)',
+                        borderRadius: '999px',
+                      }}>
+                        Select
+                      </span>
                     </div>
                   </div>
-                  <div className="candidate-info">
-                    <div className="candidate-title">
+                  <div className="candidate-info" style={{
+                    padding: '0.625rem',
+                    flex: '1 1 auto',
+                    minHeight: '70px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    overflow: 'hidden',
+                  }}>
+                    <div className="candidate-title" style={{
+                      fontSize: '0.8125rem',
+                      fontWeight: 500,
+                      color: '#1f2937',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
                       {candidate.title || "Untitled"}
                     </div>
-                    <div className="candidate-meta">
-                      <span>
+                    <div className="candidate-meta" style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '0.375rem',
+                      marginTop: '0.25rem',
+                    }}>
+                      <span style={{
+                        fontSize: '0.6875rem',
+                        color: '#9ca3af',
+                        fontFamily: 'monospace',
+                      }}>
                         {candidate.width}×{candidate.height}
                       </span>
-                      {candidate.category && <span>{candidate.category}</span>}
+                      {candidate.category && <span style={{
+                        fontSize: '0.6875rem',
+                        color: '#9ca3af',
+                        textTransform: 'capitalize',
+                      }}>
+                        {candidate.category}
+                      </span>}
                     </div>
                   </div>
                 </button>
               ))}
             </div>
-            <div className="modal-footer">
-              <span>Select an image to continue to the next scene.</span>
+            <div className="modal-footer" style={{
+              padding: '0.75rem 1.5rem',
+              borderTop: '1px solid #e5e7eb',
+              textAlign: 'center',
+            }}>
+              <span style={{
+                fontSize: '0.8125rem',
+                color: '#6b7280',
+              }}>
+                Select an image to continue to the next scene.
+              </span>
             </div>
           </div>
         </div>
