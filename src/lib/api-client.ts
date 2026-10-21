@@ -158,8 +158,17 @@ export const api = {
       body: JSON.stringify({ manifest_path: manifestPath, wait_for_completion: waitForCompletion }),
     }, 300000),
 
-  runPipeline: (topic: string, limit: number = 10, language: "english" | "hindi" = "english", duration: number = 30) => {
-    const params = new URLSearchParams({ topic, limit: String(limit), language, duration: String(duration) });
+  runPipeline: (topic: string, limit: number = 10, language: "english" | "hindi" = "english", duration: number = 30, quranVerseText?: string, googleFactText?: string, quranReference?: string, isQuranMode?: boolean) => {
+    const params = new URLSearchParams({ 
+      topic, 
+      limit: String(limit), 
+      language, 
+      duration: String(duration),
+      ...(quranVerseText && { quran_verse_text: quranVerseText }),
+      ...(googleFactText && { google_fact_text: googleFactText }),
+      ...(quranReference && { quran_reference: quranReference }),
+      ...(isQuranMode && { is_quran_mode: String(isQuranMode) }),
+    });
     return requestWithTimeout<{
       success: boolean;
       data?: {

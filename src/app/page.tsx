@@ -105,9 +105,14 @@ function getStepStatusFromPipeline(
 
 export default function DashboardPage() {
   const [topic, setTopic] = useState("Jawahar lal Nehru leadership");
-  const [language, setLanguage] = useState<"english" | "hindi">("english");
+  const [language, setLanguage] = useState<"english" | "hindi">("hindi");
   const [limit, setLimit] = useState(10);
   const [duration, setDuration] = useState(30);
+  const [quranVerseText, setQuranVerseText] = useState("");
+  const [googleFactText, setGoogleFactText] = useState("");
+  const [quranReference, setQuranReference] = useState("");
+  const [isQuranMode, setIsQuranMode] = useState(false);
+  const [showQuranModal, setShowQuranModal] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<PipelineResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -315,6 +320,10 @@ export default function DashboardPage() {
         limit,
         language,
         duration,
+        quranVerseText,
+        googleFactText,
+        quranReference,
+        isQuranMode,
       );
       console.log("Pipeline response:", response);
       if (!response.success || !response.data) {
@@ -779,7 +788,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="duration-field">
                     <label className="field-label" htmlFor="video-duration">
-                      VIDEO DURATION (MAX 30s)
+                      VIDEO DURATION (5-30s)
                     </label>
                     <div className="number-field">
                       <input
@@ -790,11 +799,11 @@ export default function DashboardPage() {
                           setDuration(
                             Math.min(
                               30,
-                              Math.max(1, Number(event.target.value) || 1),
+                              Math.max(5, Number(event.target.value) || 5),
                             ),
                           )
                         }
-                        min={1}
+                        min={5}
                         max={30}
                         disabled={isRunning}
                       />
@@ -806,6 +815,23 @@ export default function DashboardPage() {
                     <div className="number-field">
                       <span className="auto-value">{imageCount}</span>
                       <span>images</span>
+                    </div>
+                  </div>
+                  <div className="quran-mode-field">
+                    <label className="field-label">QURAN VERSE MODE</label>
+                    <div className="toggle-wrapper">
+                      <input
+                        id="quran-mode"
+                        type="checkbox"
+                        checked={isQuranMode}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setIsQuranMode(checked);
+                          if (checked) setShowQuranModal(true);
+                        }}
+                        disabled={isRunning}
+                      />
+                      <span className="toggle-label">Enable Quran Verse + Google Fact mode</span>
                     </div>
                   </div>
                 </div>
@@ -1441,6 +1467,152 @@ export default function DashboardPage() {
               }}>
                 Select an image to continue to the next scene.
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+      {showQuranModal && (
+        <div className="modal-overlay" onClick={() => setShowQuranModal(false)} style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.7)',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+        }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '85vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderBottom: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>
+                Quran Verse Details
+              </h3>
+              <button
+                onClick={() => setShowQuranModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  color: '#6b7280',
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                  Quran Verse (English)
+                </label>
+                <textarea
+                  value={quranVerseText}
+                  onChange={(e) => setQuranVerseText(e.target.value)}
+                  placeholder="e.g. And We made from water every living thing"
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '0.875rem',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                  Google Fact / Science Verification
+                </label>
+                <textarea
+                  value={googleFactText}
+                  onChange={(e) => setGoogleFactText(e.target.value)}
+                  placeholder="e.g. Modern biology confirms all living cells are 70-90% water"
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '0.875rem',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                  Quran Reference
+                </label>
+                <input
+                  type="text"
+                  value={quranReference}
+                  onChange={(e) => setQuranReference(e.target.value)}
+                  placeholder="e.g. Al-Anbiya 21:30"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '0.875rem',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  onClick={() => setShowQuranModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem',
+                    background: '#6366f1',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Save & Close
+                </button>
+                <button
+                  onClick={() => setShowQuranModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem',
+                    background: '#f3f4f6',
+                    color: '#374151',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
